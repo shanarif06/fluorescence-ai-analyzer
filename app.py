@@ -60,7 +60,7 @@ if uploaded_file:
             st.stop()
 
         # Prepare the request
-       const geminiApiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+       gemini_api_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
         prompt = f"""
         Analyze this fluorescence image used for fluoride detection.
         The extracted RGB values are R={r:.1f}, G={g:.1f}, B={b:.1f}.
