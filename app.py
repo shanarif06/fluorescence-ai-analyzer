@@ -1,102 +1,74 @@
 import streamlit as st
-from PIL import Image
+import cv2
 import numpy as np
-import io
-import base64
 import requests
+from PIL import Image
 
-# -----------------------------------------------------
-# 🧠 Title & Description
-# -----------------------------------------------------
-st.set_page_config(page_title="AI Fluorescence Analyzer", page_icon="💡", layout="wide")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="Smartphone Sensing Analyzer", layout="wide")
+st.title("📱 Smartphone Sensing Analyzer")
+st.caption("Extract RGB, analyze with AI, and track your experiments.")
 
-st.title("💡 AI Fluorescence Analyzer for Fluoride Detection")
-st.write("""
-Upload a fluorescence image (e.g., from a smartphone or microscope).  
-This app will:
-1. Extract **RGB color values** from the image,  
-2. Estimate **relative fluorescence intensity**, and  
-3. (Optionally) use **AI (Gemini)** to interpret your result.
-""")
+# --- LAYOUT ---
+col1, col2 = st.columns([1.2, 1])
 
-# -----------------------------------------------------
-# 🧪 Image Upload
-# -----------------------------------------------------
-uploaded_file = st.file_uploader("📤 Upload Fluorescence Image", type=["jpg", "jpeg", "png"])
+# --- API Setup ---
+api_key = st.secrets["GEMINI_API_KEY"]
+gemini_api_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
 
-if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Uploaded Fluorescence Image", use_container_width=True)
+# --- LEFT COLUMN: Image Upload + ROI ---
+with col1:
+    uploaded = st.file_uploader("Click to Upload Fluorescence Image", type=["png", "jpg", "jpeg"])
+    roi_size = st.slider("Region of Interest (ROI) Size", 5, 50, 15, step=5)
+    
+    if uploaded:
+        image = Image.open(uploaded)
+        img = np.array(image)
+        h, w, _ = img.shape
+        
+        st.image(img, caption="Uploaded Image", use_container_width=True)
+        x = st.slider("ROI X Position", 0, w-1, w//2)
+        y = st.slider("ROI Y Position", 0, h-1, h//2)
+        
+        # Extract ROI and RGB
+        roi = img[max(0, y-roi_size):y+roi_size, max(0, x-roi_size):x+roi_size]
+        avg_color = np.mean(roi.reshape(-1, 3), axis=0)
+        r, g, b = [int(c) for c in avg_color]
+        
+        st.subheader("🎨 RGB Values")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("R", r)
+        c2.metric("G", g)
+        c3.metric("B", b)
+    else:
+        st.info("Upload an image to start analysis.")
 
-    # Convert image to NumPy array
-    img_array = np.array(image)
-    avg_rgb = img_array.mean(axis=(0, 1))
-    r, g, b = avg_rgb
+# --- RIGHT COLUMN: AI Analysis ---
+with col2:
+    st.header("⚡ AI-Enhanced Prediction")
 
-    st.subheader("🎨 Extracted Color Information")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Red (R)", f"{r:.1f}")
-    col2.metric("Green (G)", f"{g:.1f}")
-    col3.metric("Blue (B)", f"{b:.1f}")
-
-    # -----------------------------------------------------
-    # 💡 Simple Fluorescence Intensity Estimation
-    # -----------------------------------------------------
-    intensity = (r + g + b) / 3
-    st.markdown(f"### 🔆 Estimated Relative Intensity: **{intensity:.1f} (0–255 scale)**")
-
-    st.info("Tip: Higher RGB values indicate stronger fluorescence signal intensity.")
-
-    # -----------------------------------------------------
-    # 🤖 Optional AI-based Analysis (Gemini)
-    # -----------------------------------------------------
-    st.markdown("#### 🤖 Ask AI to Analyze Fluorescence")
-
-    if st.button("Run AI Analysis (Gemini Model)"):
-        try:
-            api_key = st.secrets["GEMINI_API_KEY"]
-        except:
-            st.error("⚠️ Please add your Gemini API key in Streamlit Secrets (Settings → Secrets).")
-            st.stop()
-
-        # Prepare the request
-       gemini_api_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
-        prompt = f"""
-        Analyze this fluorescence image used for fluoride detection.
-        The extracted RGB values are R={r:.1f}, G={g:.1f}, B={b:.1f}.
-        Estimate the relative fluorescence intensity on a scale of 0–100,
-        and provide a short analytical comment in 2 sentences.
-        """
-
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG")
-        img_bytes = buffer.getvalue()
-        base64_img = base64.b64encode(img_bytes).decode("utf-8")
-
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inlineData": {"mimeType": "image/jpeg", "data": base64_img}}
-                ]
-            }]
-        }
-
-        with st.spinner("Analyzing fluorescence with Gemini..."):
-            response = requests.post(url, json=payload)
-            if response.status_code == 200:
-                data = response.json()
-                try:
-                    text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    st.success("✅ AI Analysis Complete")
-                    st.markdown("### 📘 Gemini AI Interpretation")
-                    st.write(text)
-                except Exception:
-                    st.error("AI response received but could not be parsed. Check the console.")
-                    st.json(data)
+    if uploaded:
+        if st.button("Estimate Intensity"):
+            st.write("Analyzing with AI model... ⏳")
+            prompt = f"""
+            You are a fluorescence intensity analyzer. 
+            Estimate relative fluorescence intensity (0–100 scale) from RGB values:
+            R={r}, G={g}, B={b}.
+            Respond in JSON format:
+            {{
+              "intensity_score": <value>,
+              "color_description": "<dominant color>",
+              "analysis_notes": "<short explanation>"
+            }}
+            """
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            res = requests.post(gemini_api_url, json=payload)
+            if res.status_code == 200:
+                result = res.json()
+                text = result["candidates"][0]["content"]["parts"][0]["text"]
+                st.success("AI Analysis Complete ✅")
+                st.json(text)
             else:
-                st.error(f"API error: {response.status_code}")
-                st.text(response.text)
-
-else:
-    st.info("👆 Upload an image to begin.")
+                st.error(f"API Error: {res.status_code}")
+    else:
+        st.warning("Upload an image to enable AI prediction.")
