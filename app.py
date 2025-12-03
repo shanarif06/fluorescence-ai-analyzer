@@ -13,8 +13,7 @@ col1, col2 = st.columns([1.2, 1])
 
 # --- API Setup ---
 api_key = st.secrets["GEMINI_API_KEY"]
-gemini_api_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
-
+gemini_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 # --- LEFT COLUMN: Image Upload + ROI ---
 with col1:
     uploaded = st.file_uploader("Click to Upload Fluorescence Image", type=["png", "jpg", "jpeg"])
